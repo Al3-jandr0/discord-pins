@@ -125,23 +125,26 @@ discord-pins-gdrive/
 
 ## 🚀 Instalación y Configuración
 
-### 1. Clonar el repositorio e instalar dependencias
+### 1. Descargar e instalar
+- **Si usas el ejecutable `.exe` (Windows)**: Solo descarga `DiscordPinsBackup.exe` (desde *Releases*) en una carpeta y ábrelo con doble clic. No necesitas instalar Python ni dependencias.
+- **Si usas el código fuente con Python**:
+  ```bash
+  git clone https://github.com/TU_USUARIO/TU_REPOSITORIO.git
+  cd TU_REPOSITORIO
+  python -m pip install -r requirements.txt
+  ```
 
-```bash
-git clone https://github.com/TU_USUARIO/TU_REPOSITORIO.git
-cd TU_REPOSITORIO
-python -m pip install -r requirements.txt
-```
+### 2. Configurar tus credenciales (2 opciones)
 
-### 2. Configurar el archivo `.env`
+#### Opción A: Desde la Interfaz Gráfica (Recomendado)
+1. Abre **`DiscordPinsBackup.exe`** o **`ejecutar.bat`** (`python gui_app.py`).
+2. Pega tu **Discord Bot Token**, el **Guild ID** de tu servidor y el **Link o ID de la carpeta de Google Drive**.
+3. Haz clic en **"📂 Cargar JSON"** para seleccionar tu archivo de Cuenta de Servicio de Google (y usa **"📋 Copiar Email"** para compartirle tu carpeta en Drive).
+4. Haz clic en **"🔄 Conectar a Discord y Cargar Canales"** y marca con casillas los canales que quieras respaldar.
+5. Presiona **"💾 Guardar Configuración en .env"**.
 
-Copia el archivo de ejemplo `.env.example` a `.env`:
-
-```bash
-cp .env.example .env
-```
-
-Edita `.env` con tus datos:
+#### Opción B: Manualmente en el archivo `.env`
+Copia el archivo de ejemplo `.env.example` a `.env` y edítalo con tus datos:
 
 ```env
 DISCORD_TOKEN=tu_discord_bot_token_aqui
