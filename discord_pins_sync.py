@@ -11,42 +11,70 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
-# Cargar variables de entorno
+# Cargar variables de entorno iniciales (si existen)
 load_dotenv()
 
-# Obtener y validar variables de entorno
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID_STR = os.getenv("GUILD_ID")
-DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID")
-CATEGORY_NAME = os.getenv("CATEGORY_NAME", "").strip()
-CHANNEL_IDS_STR = os.getenv("CHANNEL_IDS", "").strip()
-SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_FILE", "credentials.json")
-DRY_RUN = os.getenv("DRY_RUN", "False").lower() in ("true", "1", "yes")
-UNPIN_AFTER_BACKUP = os.getenv("UNPIN_AFTER_BACKUP", "False").lower() in ("true", "1", "yes")
-NOTIFY_IN_CHANNEL = os.getenv("NOTIFY_IN_CHANNEL", "True").lower() in ("true", "1", "yes")
 
-if not DISCORD_TOKEN:
-    raise ValueError("Error: DISCORD_TOKEN no está definido en el archivo .env")
-if not GUILD_ID_STR:
-    raise ValueError("Error: GUILD_ID no está definido en el archivo .env")
-if not DRIVE_FOLDER_ID:
-    raise ValueError("Error: DRIVE_FOLDER_ID no está definido en el archivo .env")
+def extract_drive_folder_id(raw_value):
+    """Extrae el ID de carpeta si el usuario pegó una URL completa de Google Drive."""
+    if not raw_value:
+        return ""
+    raw_value = raw_value.strip()
+    match = re.search(r"/folders/([a-zA-Z0-9_-]+)", raw_value)
+    if match:
+        return match.group(1)
+    return raw_value
 
-try:
-    GUILD_ID = int(GUILD_ID_STR)
-except ValueError:
-    raise ValueError("Error: GUILD_ID debe ser un número entero válido")
 
-# Parsear lista de IDs de canales (si se especificó)
-CHANNEL_IDS = []
-if CHANNEL_IDS_STR:
-    for cid in CHANNEL_IDS_STR.split(","):
-        cid = cid.strip()
-        if cid:
-            try:
-                CHANNEL_IDS.append(int(cid))
-            except ValueError:
-                print(f"Advertencia: '{cid}' no es un ID de canal válido y será ignorado.")
+def load_config(dry_run_override=None):
+    """Recarga el archivo .env y valida las variables de configuración."""
+    load_dotenv(override=True)
+
+    discord_token = os.getenv("DISCORD_TOKEN", "").strip()
+    guild_id_str = os.getenv("GUILD_ID", "").strip()
+    drive_folder_id = extract_drive_folder_id(os.getenv("DRIVE_FOLDER_ID", ""))
+    category_name = os.getenv("CATEGORY_NAME", "").strip()
+    channel_ids_str = os.getenv("CHANNEL_IDS", "").strip()
+    service_account_file = os.getenv("SERVICE_ACCOUNT_FILE", "credentials.json").strip() or "credentials.json"
+    dry_run = os.getenv("DRY_RUN", "False").lower() in ("true", "1", "yes")
+    if dry_run_override is not None:
+        dry_run = bool(dry_run_override)
+    unpin_after_backup = os.getenv("UNPIN_AFTER_BACKUP", "False").lower() in ("true", "1", "yes")
+    notify_in_channel = os.getenv("NOTIFY_IN_CHANNEL", "True").lower() in ("true", "1", "yes")
+
+    if not discord_token:
+        raise ValueError("Error: DISCORD_TOKEN no está definido en el archivo .env")
+    if not guild_id_str:
+        raise ValueError("Error: GUILD_ID no está definido en el archivo .env")
+    if not drive_folder_id:
+        raise ValueError("Error: DRIVE_FOLDER_ID no está definido en el archivo .env")
+
+    try:
+        guild_id = int(guild_id_str)
+    except ValueError:
+        raise ValueError("Error: GUILD_ID debe ser un número entero válido")
+
+    channel_ids = []
+    if channel_ids_str:
+        for cid in channel_ids_str.split(","):
+            cid = cid.strip()
+            if cid:
+                try:
+                    channel_ids.append(int(cid))
+                except ValueError:
+                    print(f"Advertencia: '{cid}' no es un ID de canal válido y será ignorado.")
+
+    return {
+        "discord_token": discord_token,
+        "guild_id": guild_id,
+        "drive_folder_id": drive_folder_id,
+        "category_name": category_name,
+        "channel_ids": channel_ids,
+        "service_account_file": service_account_file,
+        "dry_run": dry_run,
+        "unpin_after_backup": unpin_after_backup,
+        "notify_in_channel": notify_in_channel,
+    }
 
 
 # --- FUNCIONES AUXILIARES DE GOOGLE DRIVE ---
@@ -527,27 +555,85 @@ class DiscordPinsBackupClient(discord.Client):
         print("\n[+] Sincronización finalizada correctamente.")
 
 
+def fetch_guild_channels(discord_token, guild_id):
+    """
+    Conecta brevemente a Discord y devuelve (guild_name, lista_de_canales)
+    donde cada canal es un dict: {'id': int, 'name': str, 'category': str, 'can_read': bool}.
+    """
+    result = {"guild_name": None, "channels": [], "error": None}
+
+    intents = discord.Intents.default()
+    intents.guilds = True
+
+    class ChannelScannerClient(discord.Client):
+        async def on_ready(self):
+            try:
+                guild = self.get_guild(int(guild_id))
+                if not guild:
+                    result["error"] = f"No se encontró el servidor con ID {guild_id}. Verifica que el bot haya sido invitado."
+                    return
+                result["guild_name"] = guild.name
+                for ch in guild.text_channels:
+                    perms = ch.permissions_for(guild.me)
+                    can_read = bool(perms.read_messages and perms.read_message_history)
+                    cat_name = ch.category.name if ch.category else "Sin categoría"
+                    result["channels"].append({
+                        "id": ch.id,
+                        "name": ch.name,
+                        "category": cat_name,
+                        "can_read": can_read,
+                    })
+            except Exception as e:
+                result["error"] = str(e)
+            finally:
+                await self.close()
+
+    async def _runner():
+        client = ChannelScannerClient(intents=intents)
+        async with client:
+            await client.start(discord_token.strip())
+
+    try:
+        asyncio.run(_runner())
+    except discord.errors.LoginFailure:
+        raise ValueError("El token de Discord provisto no es válido.")
+    except Exception as e:
+        if not result["error"]:
+            raise RuntimeError(f"Error al conectar con Discord: {e}")
+
+    if result["error"]:
+        raise RuntimeError(result["error"])
+
+    return result["guild_name"], result["channels"]
+
+
 # --- FLUJO PRINCIPAL ---
 
-def main():
+def main(dry_run_override=None):
     print("Iniciando bot extractor de mensajes fijados de Discord...")
 
+    try:
+        cfg = load_config(dry_run_override=dry_run_override)
+    except Exception as e:
+        print(f"\n[ERROR DE CONFIGURACIÓN] {e}")
+        return
+
     # Mostrar modo de operación
-    if CHANNEL_IDS:
-        print(f"Modo: Canales específicos → IDs: {CHANNEL_IDS}")
-    elif CATEGORY_NAME:
-        print(f"Modo: Categoría → '{CATEGORY_NAME}'")
+    if cfg["channel_ids"]:
+        print(f"Modo: Canales específicos → IDs: {cfg['channel_ids']}")
+    elif cfg["category_name"]:
+        print(f"Modo: Categoría → '{cfg['category_name']}'")
     else:
         print("Modo: Todos los canales del servidor.")
 
-    if UNPIN_AFTER_BACKUP:
+    if cfg["unpin_after_backup"]:
         print("⚠️  UNPIN_AFTER_BACKUP=True → Los mensajes fijados serán desfijados tras el backup.")
-    if DRY_RUN:
+    if cfg["dry_run"]:
         print("🔍 DRY_RUN=True → Simulación activada. No se subirá nada ni se desfijará nada.")
 
     # 1. Autenticación con Google Drive
     try:
-        drive_service = get_drive_service(SERVICE_ACCOUNT_FILE)
+        drive_service = get_drive_service(cfg["service_account_file"])
         print("Autenticación con Google Drive exitosa.")
     except Exception as e:
         print(f"\n[ERROR DE CONFIGURACIÓN] No se pudo inicializar Google Drive API: {e}")
@@ -561,20 +647,23 @@ def main():
     intents.members = True
 
     # 3. Inicializar e iniciar el cliente
-    client = DiscordPinsBackupClient(
-        intents=intents,
-        guild_id=GUILD_ID,
-        category_name=CATEGORY_NAME,
-        channel_ids=CHANNEL_IDS,
-        drive_folder_id=DRIVE_FOLDER_ID,
-        drive_service=drive_service,
-        dry_run=DRY_RUN,
-        unpin_after_backup=UNPIN_AFTER_BACKUP,
-        notify_in_channel=NOTIFY_IN_CHANNEL,
-    )
+    async def _run_client():
+        client = DiscordPinsBackupClient(
+            intents=intents,
+            guild_id=cfg["guild_id"],
+            category_name=cfg["category_name"],
+            channel_ids=cfg["channel_ids"],
+            drive_folder_id=cfg["drive_folder_id"],
+            drive_service=drive_service,
+            dry_run=cfg["dry_run"],
+            unpin_after_backup=cfg["unpin_after_backup"],
+            notify_in_channel=cfg["notify_in_channel"],
+        )
+        async with client:
+            await client.start(cfg["discord_token"])
 
     try:
-        client.run(DISCORD_TOKEN)
+        asyncio.run(_run_client())
     except discord.errors.LoginFailure:
         print("\n[ERROR DE CONFIGURACIÓN] El token de Discord provisto no es válido.")
         print("Por favor, verifica la variable DISCORD_TOKEN en tu archivo .env.")
@@ -584,3 +673,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

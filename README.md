@@ -29,7 +29,10 @@ Este bot soluciona el problema permitiendo:
 - **Control de duplicados (`sync_history.json`)**: Registra localmente qué mensajes ya fueron respaldados para no volver a subirlos en ejecuciones futuras.
 - **Soporte para Unidades Compartidas (*Shared Drives*)**: Compatible tanto con carpetas en "Mi Unidad" como en Unidades Compartidas de Google Workspace.
 - **Modo simulación (`DRY_RUN`)**: Permite verificar qué canales y mensajes se procesarían sin subir archivos ni modificar nada en Discord.
-- **Ejecución en 1 clic para Windows (`ejecutar.bat`)**: Incluye validaciones previas de entorno y credenciales.
+- **Aplicación de Escritorio para Windows (`gui_app.py` / `DiscordPinsBackup.exe`)**:
+  - Panel visual para configurar y guardar el `.env` y cargar `credentials.json` sin editar archivos a mano.
+  - **Selector visual de canales con checkboxes**: se conecta a tu servidor de Discord y lista todos los canales por categoría para elegir cuáles respaldar sin tener que buscar sus IDs.
+  - Consola de progreso en vivo con botones de **"Simular (Dry Run)"** y **"Ejecutar Respaldo Ahora"**.
 
 ---
 
@@ -37,7 +40,7 @@ Este bot soluciona el problema permitiendo:
 
 ```mermaid
 flowchart TD
-    A["Inicio (python discord_pins_sync.py / ejecutar.bat)"] --> B["Cargar .env y autenticar Google Drive API"]
+    A["Inicio (Interfaz Gráfica gui_app.py / DiscordPinsBackup.exe / CLI)"] --> B["Cargar .env y autenticar Google Drive API"]
     B --> C["Conectar Bot a Discord"]
     C --> D{"¿Cómo filtrar canales?"}
     D -->|CHANNEL_IDS definido| E["Obtener canales por ID"]
@@ -65,8 +68,9 @@ flowchart TD
 
 ```text
 discord-pins-gdrive/
-├── discord_pins_sync.py   # Script principal de sincronización
-├── ejecutar.bat           # Lanzador rápido para Windows (doble clic)
+├── gui_app.py             # Aplicación de escritorio (Interfaz Gráfica en Tkinter)
+├── discord_pins_sync.py   # Motor principal de sincronización (también ejecutable por CLI)
+├── ejecutar.bat           # Lanzador rápido para Windows (abre la interfaz gráfica)
 ├── requirements.txt       # Dependencias de Python
 ├── .env.example           # Plantilla de variables de entorno
 ├── .gitignore             # Protección para no subir claves ni temporales a Git
@@ -172,10 +176,16 @@ DRY_RUN=False
 
 ## ▶️ Ejecución
 
-### En Windows (1 clic)
-Haz doble clic sobre **`ejecutar.bat`**. El script verificará que Python, `.env` y `credentials.json` estén presentes y ejecutará la sincronización mostrando el progreso en pantalla.
+### Opción 1: Aplicación de Escritorio (Interfaz Gráfica)
+Haz doble clic sobre **`DiscordPinsBackup.exe`** (o sobre **`ejecutar.bat`** / `python gui_app.py`).
+Desde la ventana podrás:
+1. Configurar y guardar tus claves (`.env`) e importar tu archivo `credentials.json`.
+2. Hacer clic en **"🔄 Conectar a Discord y Cargar Canales"** para marcar con casillas qué canales quieres respaldar sin buscar sus IDs manualmente.
+3. Ejecutar **"🔍 Simular (Dry Run)"** o **"🚀 Ejecutar Respaldo Ahora"** viendo el registro en vivo.
 
-### Desde la terminal (Windows / Linux / macOS)
+*(Si deseas compilar tu propio ejecutable `.exe` desde el código fuente en Windows, ejecuta: `pip install pyinstaller` y luego `python -m PyInstaller --onefile --windowed --name DiscordPinsBackup gui_app.py`).*
+
+### Opción 2: Desde la terminal (Modo Consola / Automatización)
 ```bash
 python discord_pins_sync.py
 ```
